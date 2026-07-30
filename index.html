@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>小鋼珠遊戲機第二代</title>
+    <title>CR無敵鐵金剛 - 光子力環狀彈珠道</title>
     <style>
         * {
             margin: 0; padding: 0; box-sizing: border-box;
@@ -116,7 +116,7 @@
             width: 100%; flex-shrink: 0;
             background: linear-gradient(to bottom, #112244, #050a18);
             border-top: 4px solid #ff2200;
-            display: flex; flex-direction: column; justify-content: space-between;
+            display: flex; flex-direction: column; justify-style: space-between;
             padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)) 12px;
             box-shadow: inset 0 5px 15px rgba(0, 162, 255, 0.3);
             z-index: 50; gap: 6px;
@@ -259,7 +259,7 @@
             primaryColor: "#00f0ff",
             secondaryColor: "#ff2200",
             accentColor: "#ffe600",
-            bgImageUrl: "",
+            bgImageUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQF1pDOQkWbEU4swesrSbMBodi7fLJKH72Mc_5ygpVmj2hJnF6Vm2WtcQUM&s=10",
             speakers: {
                 system: "【系統】",
                 hero: "【兜甲兒】",
@@ -277,13 +277,13 @@
                 feverEnd: "戰鬥結束。和平再次降臨！"
             },
             medias: {
-                start: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-                spin: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=600",
-                battleAlert: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+                start: "https://media.tenor.com/GA_HPJ1lXD4AAAA1/mazinger-z-filder-on.webp",
+                spin: "https://media.tenor.com/B2rfY_GZC8sAAAAM/scrander-cross.gif",
+                battleAlert: "https://media.tenor.com/9AV5AkTzIOcAAAAM/anime-mazinger.gif",
                 win: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600",
                 lose: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
-                feverStart: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
-                feverEnd: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
+                feverStart: "https://tenor.com/view/mazinger-z-gif-27069557",
+                feverEnd: "https://media.tenor.com/B2rfY_GZC8sAAAAM/scrander-cross.gif"
             },
             sfxFreq: { launch: 180, chance: 1046, win: 1318, lose: 180 }
         };
@@ -715,7 +715,8 @@
             const cleanUrl = url.split('?')[0].toLowerCase();
             return cleanUrl.endsWith('.png') || cleanUrl.endsWith('.jpg') || cleanUrl.endsWith('.jpeg') || 
                    cleanUrl.endsWith('.gif') || cleanUrl.endsWith('.webp') || cleanUrl.endsWith('.svg') ||
-                   cleanUrl.includes('images.unsplash.com');
+                   cleanUrl.includes('images.unsplash.com') || cleanUrl.includes('media.tenor.com') ||
+                   cleanUrl.includes('tenor.com') || cleanUrl.includes('gstatic.com');
         }
 
         function setDialogueAndMedia(key, minHoldFrames = 120) {
@@ -1149,6 +1150,12 @@
         resizeCanvas();
         initPins();
         updateUI();
+        
+        // 載入預設底圖背景
+        if (currentTheme.bgImageUrl) {
+            tryLoadBgImage(currentTheme.bgImageUrl, '預設網址背景');
+        }
+        
         setDialogueAndMedia("start", 120);
         requestAnimationFrame(gameLoop);
     </script>
