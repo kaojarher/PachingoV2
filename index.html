@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>小鋼珠遊戲機第二代</title>
+    <style>
+        * {
+            margin: 0; padding: 0; box-sizing: border-box;
+            user-select: none; -webkit-user-select: none; touch-action: none;
+        }
+        body {
+            background-color: #050811; color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'monospace', sans-serif;
+            width: 100vw; height: 100dvh;
+            overflow: hidden; display: flex; align-items: center; justify-content: center;
+        }
+        #gameContainer {
+            position: relative; width: 100%; height: 100dvh; max-width: 500px; max-height: 900px;
+            background: #0a0f1d; border: 2px solid #1a2b4c;
+            display: flex; flex-direction: column; box-shadow: 0 0 30px rgba(0, 162, 255, 0.5);
+            overflow: hidden;
+        }
+        
+        /* 畫布彈性自適應 */
+        .canvas-wrapper {
+            position: relative;
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, #0f1c3f, #030611);
+        }
+        canvas {
+            display: block; width: 100%; height: 100%;
+            object-fit: contain;
+        }
+
+        /* 追逐燈條 - 改用動態百分比定位 */
+        .lightFrame {
+            position: absolute; inset: 0;
+            pointer-events: none; z-index: 40;
+        }
+        .lightFrame i {
+            position: absolute; width: 8px; height: 8px; border-radius: 50%;
+            background: #2a354d; transition: background .08s linear, box-shadow .08s linear;
+            transform: translate(-50%, -50%);
+        }
+        .lightFrame i.on {
+            background: #ffe600;
+            box-shadow: 0 0 8px 2px #ffe600, 0 0 16px 4px rgba(255, 230, 0, 0.5);
+        }
+        .lightFrame i.fever {
+            background: #ff2200;
+            box-shadow: 0 0 10px 3px #ff2200, 0 0 20px 5px rgba(255, 34, 0, 0.6);
+        }
+
+        /* 頂部設定按鈕 */
+        .topSettingBtn {
+            position: absolute; top: 10px; right: 10px; z-index: 45;
+            width: 38px; height: 38px; border-radius: 50%;
+            background: rgba(10, 15, 29, 0.85); border: 1.5px solid #00a2ff;
+            color: #00f0ff; font-size: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+            transition: transform 0.2s, background 0.2s;
+        }
+        .topSettingBtn:active { transform: scale(0.92); }
+
+        /* 主題設定 Modal 彈窗 */
+        #settingsModal {
+            display: none; position: absolute; inset: 0; z-index: 100;
+            background: rgba(3, 6, 17, 0.96); backdrop-filter: blur(6px);
+            padding: 15px; flex-direction: column; justify-content: flex-start; align-items: center;
+            gap: 10px; border: 2px solid #00f0ff; overflow-y: auto;
+        }
+        #settingsModal.active { display: flex; }
+        .modal-title { font-size: 16px; font-weight: bold; color: #ffe600; text-shadow: 0 0 8px #ff2200; margin-bottom: 2px; }
+        .modal-subtitle { font-size: 11px; color: #8ba3c7; margin-bottom: 6px; text-align: center; }
+
+        /* Modal 區塊 */
+        .modal-section {
+            width: 100%; background: rgba(0, 162, 255, 0.08); border: 1px solid #00a2ff;
+            border-radius: 6px; padding: 10px; margin-bottom: 4px;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .modal-section-title { font-size: 12px; font-weight: bold; color: #00f0ff; border-bottom: 1px solid rgba(0,240,255,0.3); padding-bottom: 4px; }
+        .bg-control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .bg-status-text { font-size: 11px; color: #8ba3c7; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .modal-btn-group { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 6px; }
+        .modal-btn {
+            padding: 9px; background: linear-gradient(135deg, #0055ff, #001144);
+            border: 2px solid #00f0ff; color: #fff; font-weight: bold;
+            border-radius: 6px; cursor: pointer; font-size: 12px; text-align: center;
+            display: inline-block;
+        }
+        .modal-btn-sm { padding: 6px 12px; font-size: 11px; }
+        .modal-btn-close { background: linear-gradient(135deg, #ff2200, #660000); border-color: #ff6666; }
+        .modal-btn.off { background: #333; border-color: #666; color: #888; }
+        
+        .setting-field { display: flex; flex-direction: column; gap: 2px; text-align: left; width: 100%; }
+        .setting-field label { font-size: 11px; color: #00f0ff; }
+        .setting-field input[type="text"] {
+            width: 100%; padding: 5px; background: #080d1a; border: 1px solid #00a2ff;
+            color: #fff; border-radius: 4px; font-size: 11px; font-family: monospace;
+        }
+
+        /* 後台 Video 元素 */
+        #lcdVideoBuffer { display: none; }
+
+        /* 響應式控制台 */
+        #control-panel {
+            width: 100%; flex-shrink: 0;
+            background: linear-gradient(to bottom, #112244, #050a18);
+            border-top: 4px solid #ff2200;
+            display: flex; flex-direction: column; justify-content: space-between;
+            padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)) 12px;
+            box-shadow: inset 0 5px 15px rgba(0, 162, 255, 0.3);
+            z-index: 50; gap: 6px;
+        }
+        .control-row-top { display: flex; justify-content: space-between; width: 100%; align-items: center; gap: 8px; }
+        .control-row-mid { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; padding: 2px 0; min-height: 18px; }
+        .control-row-mid .chip {
+            font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+            color: #8ba3c7; border: 1px solid #2a354d; font-family: monospace;
+        }
+        .control-row-mid .chip.active { color: #000; background: #ffe600; border-color: #ffe600; }
+        .control-row-bottom { display: flex; justify-content: space-between; width: 100%; align-items: center; gap: 8px; }
+        .parlor-stats { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+
+        .info-box {
+            font-size: 14px; font-weight: 900; background: #000;
+            padding: 4px 8px; border-radius: 6px; border: 1.5px solid #00f0ff;
+            width: 100%; font-family: monospace; text-align: center;
+            box-shadow: inset 0 0 5px rgba(0, 240, 255, 0.5);
+            white-space: nowrap;
+        }
+        #ballCount { color: #fff; text-shadow: 0 0 4px #00f0ff; }
+        #jackpotCount { color: #fff; text-shadow: 0 0 4px #ff2200; }
+
+        .btn-refill, .btn-bgm, .btn-bgm2 {
+            background: linear-gradient(135deg, #ffe600, #ff6600);
+            color: #000; border: 1.5px solid #fff; padding: 6px 10px;
+            font-size: 12px; font-weight: bold; border-radius: 6px; cursor: pointer;
+            box-shadow: 1px 1px 0px #000; white-space: nowrap;
+        }
+        .btn-bgm { background: linear-gradient(135deg, #00a2ff, #001155); color: #fff; }
+        .btn-bgm2 { background: linear-gradient(135deg, #ff2200, #990000); color: #fff; }
+        .bgm-group { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+
+        /* 發射把手 */
+        .handle-area { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+        .dial-outer {
+            width: 60px; height: 60px; background: radial-gradient(circle, #666, #111);
+            border: 3px solid #aaa; border-radius: 50%; position: relative;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .dial-knob {
+            width: 52px; height: 52px;
+            background: conic-gradient(from 0deg, #222, #0055ff, #222);
+            border-radius: 50%; position: absolute; transform: rotate(0deg);
+        }
+        .dial-indicator { width: 4px; height: 16px; background: #ffe600; position: absolute; top: 3px; left: 24px; border-radius: 2px; }
+        .dial-center { width: 18px; height: 18px; background: #000; border-radius: 50%; z-index: 2; border: 1.5px solid #555; }
+        .dial-text { font-size: 11px; color: #00f0ff; font-weight: 900; text-shadow: 1px 1px 2px #000; white-space: nowrap; }
+    </style>
+</head>
+<body>
+
+    <div id="gameContainer">
+        <!-- 頂部設定按鈕 -->
+        <button id="openSettingsBtn" class="topSettingBtn" title="開啟系統與主題設定">⚙️</button>
+
+        <!-- 主題與系統整合設定 Modal 彈窗 -->
+        <div id="settingsModal">
+            <div class="modal-title" id="themeTitleDisplay">⚙️ 系統與主題設定</div>
+            <div class="modal-subtitle">完整控制背景圖片與劇情多媒體設定</div>
+            
+            <!-- 區塊 1：底圖背景管理 -->
+            <div class="modal-section">
+                <div class="modal-section-title">🖼️ 機台底圖背景設定</div>
+                <div class="setting-field">
+                    <label for="bgUrlInput">1. 圖片網址 (URL):</label>
+                    <input type="text" id="bgUrlInput" placeholder="https://example.com/background.jpg">
+                </div>
+                <div class="bg-control-row">
+                    <label class="modal-btn modal-btn-sm" for="bgFileInput">2. 上傳本地檔案...</label>
+                    <input type="file" id="bgFileInput" accept="image/*" style="display:none;">
+                    <button id="bgToggleBtn" class="modal-btn modal-btn-sm">顯示中 👁️</button>
+                </div>
+                <div class="bg-status-text" id="bgStatus">目前狀態: 預設金屬背景</div>
+            </div>
+
+            <!-- 區塊 2：劇情對話與多媒體網址 -->
+            <div class="modal-section">
+                <div class="modal-section-title">🎬 劇情對話與多媒體連結</div>
+                <div class="setting-field"><label>1. 遊戲開始 (start):</label><input type="text" id="v_start"></div>
+                <div class="setting-field"><label>2. 變動運轉 (spin):</label><input type="text" id="v_spin"></div>
+                <div class="setting-field"><label>3. 遭遇戰鬥 (battleAlert):</label><input type="text" id="v_battleAlert"></div>
+                <div class="setting-field"><label>4. 戰鬥勝利 (win):</label><input type="text" id="v_win"></div>
+                <div class="setting-field"><label>5. 戰鬥失敗 (lose):</label><input type="text" id="v_lose"></div>
+                <div class="setting-field"><label>6. FEVER 大賞 (feverStart):</label><input type="text" id="v_feverStart"></div>
+                <div class="setting-field"><label>7. 大賞結束 (feverEnd):</label><input type="text" id="v_feverEnd"></div>
+            </div>
+
+            <div class="modal-btn-group">
+                <button class="modal-btn" id="exportThemeBtn">📥 匯出當前主題配置 (JSON)</button>
+                <label class="modal-btn" for="importThemeInput">📤 匯入主題配置檔 (JSON)</label>
+                <input type="file" id="importThemeInput" accept=".json" style="display:none;">
+                <button class="modal-btn modal-btn-close" id="closeSettingsBtn">確定並儲存關閉</button>
+            </div>
+        </div>
+
+        <!-- 後台 Video Buffer -->
+        <video id="lcdVideoBuffer" playsinline loop muted crossorigin="anonymous"></video>
+
+        <div class="canvas-wrapper">
+            <div class="lightFrame" id="lightFrame"></div>
+            <canvas id="pachinkoCanvas"></canvas>
+        </div>
+
+        <div id="control-panel">
+            <div class="control-row-top">
+                <div class="parlor-stats">
+                    <div id="ballCount" class="info-box">持玉: 300 發</div>
+                    <div id="jackpotCount" class="info-box">大賞: 0 回</div>
+                </div>
+                <div class="bgm-group">
+                    <button id="bgmBtn" class="btn-bgm">♫ 主題曲 OP</button>
+                    <button id="bgmBtn2" class="btn-bgm2">★ 光子力 LOOP</button>
+                </div>
+            </div>
+
+            <div class="control-row-mid" id="chordStrip"></div>
+
+            <div class="control-row-bottom">
+                <button id="refillBtn" class="btn-refill">補給鋼珠 (+100)</button>
+                <div class="handle-area">
+                    <div class="dial-outer" id="dialOuter">
+                        <div class="dial-knob" id="dialKnob">
+                            <div class="dial-indicator"></div>
+                        </div>
+                        <div class="dial-center"></div>
+                    </div>
+                    <div class="dial-text" id="powerDisplay">發射 OFF</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===================== 全局主題配置與多媒體綁定 =====================
+        let currentTheme = {
+            id: "mazingerZ",
+            name: "CR無敵鐵金剛",
+            primaryColor: "#00f0ff",
+            secondaryColor: "#ff2200",
+            accentColor: "#ffe600",
+            bgImageUrl: "",
+            speakers: {
+                system: "【系統】",
+                hero: "【兜甲兒】",
+                heroine: "【弓沙織】",
+                villain: "【阿修羅男爵】",
+                boss: "【地獄博士】"
+            },
+            dialogues: {
+                start: "指揮艇組合！無敵鐵金剛出擊！",
+                spin: "光子力引擎全開！極限運轉！",
+                battleAlert: "警告！機械獸軍團來襲！",
+                win: "胸部火焰！機械獸徹底擊毀！",
+                lose: "可惡...光子力能源不足！",
+                feverStart: "大賞開啟！金剛飛拳全彈發射！",
+                feverEnd: "戰鬥結束。和平再次降臨！"
+            },
+            medias: {
+                start: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                spin: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=600",
+                battleAlert: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+                win: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600",
+                lose: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+                feverStart: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+                feverEnd: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
+            },
+            sfxFreq: { launch: 180, chance: 1046, win: 1318, lose: 180 }
+        };
+
+        const canvas = document.getElementById('pachinkoCanvas');
+        const ctx = canvas.getContext('2d');
+        const ballDisplay = document.getElementById('ballCount');
+        const jackpotDisplay = document.getElementById('jackpotCount');
+        const refillBtn = document.getElementById('refillBtn');
+        const bgmBtn = document.getElementById('bgmBtn');
+        const bgmBtn2 = document.getElementById('bgmBtn2');
+        const dialOuter = document.getElementById('dialOuter');
+        const dialKnob = document.getElementById('dialKnob');
+        const powerDisplay = document.getElementById('powerDisplay');
+        const chordStripEl = document.getElementById('chordStrip');
+
+        // Modal 與多媒體元素
+        const settingsModal = document.getElementById('settingsModal');
+        const openSettingsBtn = document.getElementById('openSettingsBtn');
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        const exportThemeBtn = document.getElementById('exportThemeBtn');
+        const importThemeInput = document.getElementById('importThemeInput');
+        const themeTitleDisplay = document.getElementById('themeTitleDisplay');
+        const lcdVideoBuffer = document.getElementById('lcdVideoBuffer');
+
+        let activeMediaObject = null;
+        let activeMediaType = "none"; 
+        let mediaLoaded = false;
+        let mediaHoldTimer = 0;
+
+        const V_WIDTH = 600;
+        const V_HEIGHT = 800;
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(canvas.width / V_WIDTH, canvas.height / V_HEIGHT);
+        }
+
+        let myBalls = 300;
+        let jackpots = 0;
+        let shootPower = 0;
+        let shootTimer = 0;
+        let isRotating = false;
+
+        let balls = [];
+        let pins = [];
+
+        // 背景圖管理
+        const bgFileInput = document.getElementById('bgFileInput');
+        const bgUrlInput = document.getElementById('bgUrlInput');
+        const bgToggleBtn = document.getElementById('bgToggleBtn');
+        const bgStatusEl = document.getElementById('bgStatus');
+        let bgImage = null;
+        let bgImageLoaded = false;
+        let bgVisible = true;
+        let bgOpacity = 0.45;
+
+        function tryLoadBgImage(src, label) {
+            if (!src) {
+                bgImageLoaded = false;
+                bgStatusEl.textContent = '目前狀態: 預設金屬背景';
+                return;
+            }
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                bgImage = img; bgImageLoaded = true;
+                bgStatusEl.textContent = '目前狀態: ' + (label || '網址圖片已載入');
+            };
+            img.onerror = () => { 
+                bgImageLoaded = false; 
+                bgStatusEl.textContent = '目前狀態: 載入失敗 (無效圖片)'; 
+            };
+            img.src = src;
+        }
+
+        bgFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            bgUrlInput.value = "";
+            currentTheme.bgImageUrl = "";
+            tryLoadBgImage(URL.createObjectURL(file), `本地檔: ${file.name}`);
+        });
+
+        bgUrlInput.addEventListener('input', (e) => {
+            const url = e.target.value.trim();
+            currentTheme.bgImageUrl = url;
+            if (url) {
+                tryLoadBgImage(url, '網址背景已設定');
+            } else {
+                tryLoadBgImage('', '');
+            }
+        });
+
+        bgToggleBtn.addEventListener('click', () => {
+            bgVisible = !bgVisible;
+            bgToggleBtn.textContent = bgVisible ? "顯示中 👁️" : "已隱藏 🙈";
+            bgToggleBtn.classList.toggle('off', !bgVisible);
+        });
+
+        function drawBgLayer(){
+            if (!bgVisible || !bgImageLoaded || !bgImage) return;
+            const scale = Math.max(V_WIDTH / bgImage.width, V_HEIGHT / bgImage.height);
+            const dw = bgImage.width * scale;
+            const dh = bgImage.height * scale;
+            ctx.save();
+            ctx.globalAlpha = bgOpacity;
+            ctx.drawImage(bgImage, (V_WIDTH - dw) / 2, (V_HEIGHT - dh) / 2, dw, dh);
+            ctx.restore();
+        }
+
+        let slotState = "IDLE";
+        let slotNumbers = [7, 7, 7];
+        let slotTimer = 0;
+        let retainBalls = 0;
+
+        let battleTimer = 0;
+        let playerRoll = 0;
+        let enemyRoll = 0;
+        let playerRevealed = false;
+        let enemyRevealed = false;
+        let battleRollDisplayP = 0;
+        let battleRollDisplayE = 0;
+        let battleResultTimer = 0;
+        let battleWon = false;
+        let dialogueSpeaker = currentTheme.speakers.system;
+        let dialogueText = currentTheme.dialogues.start;
+        let currentDialogueKey = "start";
+
+        const chanceGate = { x: 300, y: 560, r: 16 };
+        const feverGate = { x: 300, y: 720, w: 220, h: 26, open: false, wingAngle: 0 };
+
+        const RING = { cx: 300, cy: 320, rx: 232, ry: 250 };
+        const SCREEN = { x: 130, y: 165, w: 340, h: 260 };
+
+        // 音效系統
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const masterCompressor = audioCtx.createDynamicsCompressor();
+        masterCompressor.threshold.value = -26; masterCompressor.knee.value = 24; masterCompressor.ratio.value = 14;
+        masterCompressor.attack.value = 0.003; masterCompressor.release.value = 0.28;
+        masterCompressor.connect(audioCtx.destination);
+
+        const jackpotMaster = audioCtx.createGain();
+        jackpotMaster.gain.value = 1;
+        jackpotMaster.connect(masterCompressor);
+        let noiseBuffer = makeNoiseBuffer();
+
+        function makeNoiseBuffer(){
+            const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 1, audioCtx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+            return buf;
+        }
+
+        let bgmPlaying = false;
+        let noteIndex = 0;
+        let musicTimer = null;
+
+        const N_FREQ = {
+            'G#3': 207.65, 'A3': 220.00, 'B3': 246.94, 'C#4': 277.18, 'D4': 293.66, 'E4': 329.63, 'F#4': 369.99, 'G#4': 415.30, 'A4': 440.00, 'B4': 493.88,
+            'C#5': 554.37, 'D5': 587.33, 'E5': 659.25, 'F#5': 739.99, 'G#5': 830.61, 'A5': 880.00, 'B5': 987.77, 'C#6': 1108.73, '0': 0
+        };
+
+        const songData = [
+            ['A4', 'A3', 2], ['C#5', 'A3', 2], ['E5', 'E3', 2], ['A5', 'A3', 4],
+            ['F#5', 'D3', 2], ['E5', 'C#3', 2], ['D5', 'B3', 2], ['C#5', 'A3', 4],
+            ['B4', 'E3', 2], ['C#5', 'A3', 2], ['D5', 'D3', 2], ['E5', 'E3', 6]
+        ];
+
+        function playTone2A03(freq, type, duration, vol) {
+            if (freq === 0) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(vol * 0.4, audioCtx.currentTime + duration * 0.8);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(masterCompressor);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playNextNote() {
+            if (!bgmPlaying) return;
+            const step = songData[noteIndex];
+            const duration = step[2] * 0.075;
+            playTone2A03(N_FREQ[step[0]] || 0, 'sawtooth', duration - 0.015, 0.08);
+            playTone2A03((N_FREQ[step[1]] || 0), 'triangle', duration, 0.12);
+            noteIndex = (noteIndex + 1) % songData.length;
+            musicTimer = setTimeout(playNextNote, duration * 1000);
+        }
+
+        function startOP(){
+            if (jackpotPlaying) stopJackpotLoop();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            bgmPlaying = true; noteIndex = 0; playNextNote();
+            bgmBtn.style.background = "linear-gradient(135deg, #00f0ff, #0055ff)";
+            lightBeatMs = 200;
+        }
+        function stopOP(){
+            bgmPlaying = false; clearTimeout(musicTimer);
+            bgmBtn.style.background = "linear-gradient(135deg, #00a2ff, #001155)";
+        }
+        bgmBtn.addEventListener('click', () => { if (bgmPlaying) stopOP(); else startOP(); });
+
+        function playSfx(freq, duration, wave='square') {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = wave; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + duration);
+                osc.connect(gain); gain.connect(masterCompressor);
+                osc.start(); osc.stop(audioCtx.currentTime + duration);
+            } catch(e){}
+        }
+
+        let lastPinHitSfxTime = -1;
+        function playPinHitSfx(freq, duration){
+            const now = audioCtx.currentTime;
+            if (now - lastPinHitSfxTime < 0.018) return;
+            lastPinHitSfxTime = now; playSfx(freq, duration);
+        }
+
+        const SEMITONE = {C:-9,'C#':-8,D:-7,'D#':-6,E:-5,F:-4,'F#':-3,G:-2,'G#':-1,A:0,'A#':1,B:2};
+        function jfreq(name, octave){ return 440*Math.pow(2, (SEMITONE[name] + (octave-4)*12)/12); }
+        const CHORDS = { Am:{tones:['A','C','E']}, G:{tones:['G','B','D']}, F:{tones:['F','A','C']}, Em:{tones:['E','G','B']}, D7:{tones:['D','F#','A','C']}, Cm:{tones:['C','D#','G']}, E:{tones:['E','G#','B']} };
+        const PROGRESSION = ['Am','G','F','Em','D7','Cm','G','E'];
+        const J_BEAT = 60/143; const J_MEASURE = J_BEAT*4;
+        const TIMELINE = (() => {
+            const line = [];
+            for(let rep=0; rep<2; rep++) PROGRESSION.forEach(c=> { for(let m=0;m<2;m++) line.push(c); });
+            for(let m=0;m<4;m++) line.push('Am');
+            return line;
+        })();
+        const TOTAL_MEASURES = TIMELINE.length; const TOTAL_DUR = TOTAL_MEASURES*J_MEASURE;
+
+        const LEAD_PATTERNS = [
+            {idx:[0,1,2,1,2,3,2,1], oct:[0,0,0,1,1,1,1,0]},
+            {idx:[2,1,0,1,2,3,4,3], oct:[1,1,0,0,1,1,1,1]}
+        ];
+
+        const J_EVENTS = (() => {
+            const events = [];
+            TIMELINE.forEach((chordName, mIdx)=>{
+                const chord = CHORDS[chordName]; const n = chord.tones.length;
+                const measureStart = mIdx*J_MEASURE; const pattern = LEAD_PATTERNS[mIdx%2];
+                const eighth = J_BEAT/2;
+                for(let i=0;i<8;i++){
+                    const degree = pattern.idx[i]%n;
+                    events.push({ t: measureStart + i*eighth, freq: jfreq(chord.tones[degree], 4+pattern.oct[i]+(degree===0?1:0)), dur: eighth*1.05, gain: (i%4===0)?0.30:0.20, type:'lead' });
+                    events.push({ t: measureStart + i*eighth, freq: jfreq((i%2===0)?chord.tones[0]:chord.tones[Math.min(2,n-1)], 2), dur: eighth*1.0, gain: 0.22, type:'bass' });
+                    events.push({ t: measureStart + i*eighth, type:'hat', gain: (i%2===0)?0.10:0.06 });
+                }
+                events.push({ t: measureStart, type:'kick', gain:0.35 });
+                events.push({ t: measureStart + J_BEAT*2, type:'kick', gain:0.30 });
+            });
+            return events;
+        })();
+
+        function jPianoVoice(time, f, dur, gain){
+            const osc = audioCtx.createOscillator(); osc.type='sawtooth'; const g = audioCtx.createGain();
+            osc.connect(g); g.connect(jackpotMaster); osc.frequency.value=f;
+            g.gain.setValueAtTime(0, time); g.gain.linearRampToValueAtTime(gain, time+0.012); g.gain.exponentialRampToValueAtTime(0.0008, time+dur);
+            osc.start(time); osc.stop(time+dur+0.05);
+        }
+        function jBassVoice(time, f, dur, gain){
+            const osc = audioCtx.createOscillator(); osc.type='square'; const filt = audioCtx.createBiquadFilter();
+            filt.type='lowpass'; filt.frequency.value=800; const g = audioCtx.createGain();
+            osc.connect(filt); filt.connect(g); g.connect(jackpotMaster); osc.frequency.value=f;
+            g.gain.setValueAtTime(0,time); g.gain.linearRampToValueAtTime(gain, time+0.008); g.gain.exponentialRampToValueAtTime(0.0008, time+dur);
+            osc.start(time); osc.stop(time+dur+0.05);
+        }
+        function jHatVoice(time, gain){
+            const src = audioCtx.createBufferSource(); src.buffer = noiseBuffer;
+            const filt = audioCtx.createBiquadFilter(); filt.type='highpass'; filt.frequency.value=6000;
+            const g = audioCtx.createGain(); src.connect(filt); filt.connect(g); g.connect(jackpotMaster);
+            g.gain.setValueAtTime(gain, time); g.gain.exponentialRampToValueAtTime(0.0005, time+0.05);
+            src.start(time); src.stop(time+0.06);
+        }
+        function jKickVoice(time, gain){
+            const osc = audioCtx.createOscillator(); osc.type='sine'; const g = audioCtx.createGain();
+            osc.connect(g); g.connect(jackpotMaster);
+            osc.frequency.setValueAtTime(140, time); osc.frequency.exponentialRampToValueAtTime(45, time+0.12);
+            g.gain.setValueAtTime(gain, time); g.gain.exponentialRampToValueAtTime(0.001, time+0.18);
+            osc.start(time); osc.stop(time+0.2);
+        }
+
+        let jackpotPlaying = false; let jackpotAutoTriggered = false; let jackpotLoopTimer = null; let jackpotBase = 0;
+
+        function renderChordStrip(){
+            chordStripEl.innerHTML='';
+            PROGRESSION.forEach((c)=>{
+                const el = document.createElement('div'); el.className='chip'; el.textContent=c; chordStripEl.appendChild(el);
+            });
+        }
+        renderChordStrip();
+
+        function scheduleJackpotLoop(){
+            const base = audioCtx.currentTime + 0.1;
+            J_EVENTS.forEach(ev=>{
+                const t = base + ev.t;
+                if(ev.type==='lead') jPianoVoice(t, ev.freq, ev.dur, ev.gain);
+                else if(ev.type==='bass') jBassVoice(t, ev.freq, ev.dur, ev.gain);
+                else if(ev.type==='hat') jHatVoice(t, ev.gain);
+                else if(ev.type==='kick') jKickVoice(t, ev.gain);
+            });
+            return base;
+        }
+
+        function startJackpotLoop(auto){
+            if (jackpotPlaying) return;
+            if (bgmPlaying) stopOP();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            jackpotMaster.gain.cancelScheduledValues(audioCtx.currentTime);
+            jackpotMaster.gain.setValueAtTime(1, audioCtx.currentTime);
+            jackpotPlaying = true; jackpotAutoTriggered = !!auto;
+            jackpotBase = scheduleJackpotLoop();
+            bgmBtn2.style.background = "linear-gradient(135deg, #ff2200, #ffe600)";
+            lightBeatMs = J_BEAT*1000/2;
+            jackpotLoopTimer = setTimeout(()=>{ jackpotPlaying = false; startJackpotLoop(jackpotAutoTriggered); }, TOTAL_DUR*1000 + 250);
+        }
+        function stopJackpotLoop(){
+            jackpotPlaying = false; jackpotAutoTriggered = false; clearTimeout(jackpotLoopTimer);
+            jackpotMaster.gain.cancelScheduledValues(audioCtx.currentTime);
+            jackpotMaster.gain.setValueAtTime(jackpotMaster.gain.value, audioCtx.currentTime);
+            jackpotMaster.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.15);
+            bgmBtn2.style.background = "linear-gradient(135deg, #ff2200, #990000)";
+            [...chordStripEl.children].forEach(el=>el.classList.remove('active'));
+        }
+        bgmBtn2.addEventListener('click', () => { if (jackpotPlaying) stopJackpotLoop(); else startJackpotLoop(false); });
+
+        function updateChordUI(){
+            if (!jackpotPlaying) return;
+            const elapsed = audioCtx.currentTime - jackpotBase;
+            if (elapsed >= 0){
+                const measureIdx = Math.floor((elapsed % TOTAL_DUR) / J_MEASURE);
+                const chordName = TIMELINE[Math.min(TOTAL_MEASURES-1, measureIdx)];
+                const progIdx = PROGRESSION.indexOf(chordName);
+                [...chordStripEl.children].forEach((el,i)=> el.classList.toggle('active', i===progIdx));
+            }
+        }
+
+        // 追逐燈
+        const lightFrameEl = document.getElementById('lightFrame');
+        const LIGHT_COUNT = 34; let lightEls = [];
+        function buildLightFrame(){
+            lightFrameEl.innerHTML = ''; lightEls = [];
+            for (let i = 0; i < LIGHT_COUNT; i++) {
+                const angle = (i / LIGHT_COUNT) * Math.PI * 2 - Math.PI/2;
+                const x = 50 + ((RING.rx + 16) / V_WIDTH * 100) * Math.cos(angle);
+                const y = (RING.cy / V_HEIGHT * 100) + ((RING.ry + 16) / V_HEIGHT * 100) * Math.sin(angle);
+                const l = document.createElement('i');
+                l.style.left = x + '%'; l.style.top = y + '%';
+                lightFrameEl.appendChild(l); lightEls.push(l);
+            }
+        }
+        buildLightFrame();
+
+        let lightPos = 0; let lightBeatMs = 220; let lastLightTick = 0;
+        function updateChaseLights(ts){
+            if (ts - lastLightTick < lightBeatMs) return;
+            lastLightTick = ts;
+            const feverOn = slotState === "FEVER";
+            lightEls.forEach((el,i)=>{
+                const lit = (i - lightPos + LIGHT_COUNT) % LIGHT_COUNT < 6;
+                el.classList.toggle('on', lit && !feverOn);
+                el.classList.toggle('fever', lit && feverOn);
+            });
+            lightPos = (lightPos + 1) % LIGHT_COUNT;
+        }
+
+        // 釘子佈局
+        function initPins() {
+            pins = [];
+            const { cx, cy, rx, ry } = RING;
+            for (let i = 0; i < 14; i++) {
+                const angle = (i / 14) * Math.PI * 2 - Math.PI/2;
+                pins.push({ x: cx + Math.cos(angle) * rx * ((i % 2 === 0) ? 1 : 0.94), y: cy + Math.sin(angle) * ry * ((i % 2 === 0) ? 1 : 0.94), r: 4, type: 'normal' });
+            }
+            for (let i = 0; i < 20; i++) {
+                const angle = (i / 20) * Math.PI * 2 - Math.PI/2 + (Math.PI / 20);
+                pins.push({ x: cx + Math.cos(angle) * (rx - 30), y: cy + Math.sin(angle) * (ry - 30), r: 4, type: 'normal' });
+            }
+            for (let i = 0; i < 7; i++) pins.push({ x: 150 + i * 50, y: 95 + Math.sin(i * 0.9) * 14, r: 4, type: 'normal' });
+            pins.push({ x: 120, y: 500, r: 15, type: 'bumper' }, { x: 480, y: 500, r: 15, type: 'bumper' }, { x: 300, y: 460, r: 13, type: 'bumper' });
+            pins.push({ x: 170, y: 560, r: 12, type: 'bumper' }, { x: 430, y: 560, r: 12, type: 'bumper' });
+            pins.push({ x: 90, y: 350, r: 12, type: 'bumper' }, { x: 510, y: 350, r: 12, type: 'bumper' });
+            pins.push({ x: 220, y: 610, r: 5, type: 'normal' }, { x: 380, y: 610, r: 5, type: 'normal' }, { x: 260, y: 660, r: 5, type: 'normal' }, { x: 340, y: 660, r: 5, type: 'normal' });
+        }
+
+        function handleKnobRotation(e) {
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const rect = dialOuter.getBoundingClientRect();
+            let deltaX = clientX - (rect.left + rect.width / 2);
+            shootPower = Math.round(Math.max(0, Math.min(100, (deltaX + 30) / 60 * 100)));
+            dialKnob.style.transform = `rotate(${shootPower * 1.8}deg)`;
+            powerDisplay.textContent = shootPower > 0 ? `發射:${shootPower}%` : "發射 OFF";
+        }
+
+        dialOuter.addEventListener('mousedown', () => isRotating = true);
+        window.addEventListener('mousemove', (e) => { if (isRotating) handleKnobRotation(e); });
+        window.addEventListener('mouseup', () => isRotating = false);
+        dialOuter.addEventListener('touchstart', () => isRotating = true, {passive:true});
+        window.addEventListener('touchmove', (e) => { if (isRotating) handleKnobRotation(e); }, {passive:false});
+        window.addEventListener('touchend', () => isRotating = false);
+
+        refillBtn.addEventListener('click', () => { myBalls += 100; playSfx(currentTheme.sfxFreq.chance, 0.1); updateUI(); });
+
+        function updateUI() {
+            ballDisplay.textContent = `持玉: ${myBalls} 發`;
+            jackpotDisplay.textContent = `大賞: ${jackpots} 回`;
+        }
+
+        function processAutoShoot() {
+            if (shootPower > 5 && myBalls > 0) {
+                shootTimer++;
+                if (shootTimer >= 11) {
+                    shootTimer = 0; myBalls--; updateUI();
+                    playSfx(currentTheme.sfxFreq.launch, 0.03, 'triangle');
+                    balls.push({ x: 578, y: 730, vx: -0.3 - (shootPower * 0.035), vy: -15.5 - (shootPower * 0.165), r: 5.5, gravity: 0.34, bounce: 0.42 });
+                }
+            }
+        }
+
+        function isImageUrl(url) {
+            if (!url) return false;
+            const cleanUrl = url.split('?')[0].toLowerCase();
+            return cleanUrl.endsWith('.png') || cleanUrl.endsWith('.jpg') || cleanUrl.endsWith('.jpeg') || 
+                   cleanUrl.endsWith('.gif') || cleanUrl.endsWith('.webp') || cleanUrl.endsWith('.svg') ||
+                   cleanUrl.includes('images.unsplash.com');
+        }
+
+        function setDialogueAndMedia(key, minHoldFrames = 120) {
+            currentDialogueKey = key;
+            if (currentTheme.dialogues[key]) dialogueText = currentTheme.dialogues[key];
+            
+            const mediaUrl = currentTheme.medias ? currentTheme.medias[key] : null;
+            mediaLoaded = false;
+            mediaHoldTimer = minHoldFrames;
+
+            if (!mediaUrl) {
+                activeMediaObject = null;
+                activeMediaType = "none";
+                mediaLoaded = true;
+                return;
+            }
+
+            if (isImageUrl(mediaUrl)) {
+                activeMediaType = "image";
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => { mediaLoaded = true; };
+                img.onerror = () => { mediaLoaded = true; };
+                img.src = mediaUrl;
+                activeMediaObject = img;
+            } else {
+                activeMediaType = "video";
+                if (lcdVideoBuffer.src !== mediaUrl) {
+                    lcdVideoBuffer.src = mediaUrl;
+                    lcdVideoBuffer.load();
+                    lcdVideoBuffer.oncanplay = () => { mediaLoaded = true; };
+                    lcdVideoBuffer.play().catch(e => { mediaLoaded = true; });
+                } else {
+                    mediaLoaded = true;
+                }
+                activeMediaObject = lcdVideoBuffer;
+            }
+        }
+
+        function updateScreenLogic() {
+            if (mediaHoldTimer > 0) {
+                mediaHoldTimer--;
+            }
+
+            if (slotState === "IDLE" && retainBalls > 0 && mediaHoldTimer <= 0) {
+                retainBalls--;
+                slotState = "SPINNING";
+                slotTimer = 100;
+                dialogueSpeaker = currentTheme.speakers.heroine;
+                setDialogueAndMedia("spin", 100);
+                playSfx(660, 0.08);
+            }
+
+            if (slotState === "SPINNING") {
+                slotTimer--;
+                if (slotTimer % 4 === 0) {
+                    slotNumbers = [Math.floor(Math.random()*9)+1, Math.floor(Math.random()*9)+1, Math.floor(Math.random()*9)+1];
+                }
+                if (slotTimer <= 0 && mediaHoldTimer <= 0) {
+                    if (Math.random() < 0.35) {
+                        slotState = "BATTLE";
+                        battleTimer = 160;
+                        playerRoll = Math.floor(Math.random() * 85) + 15;
+                        enemyRoll = Math.floor(Math.random() * 80) + 15;
+                        playerRevealed = false; enemyRevealed = false;
+                        dialogueSpeaker = currentTheme.speakers.villain;
+                        setDialogueAndMedia("battleAlert", 140);
+                    } else {
+                        slotState = "IDLE";
+                        slotNumbers = [7, 5, 2];
+                        dialogueSpeaker = currentTheme.speakers.boss;
+                        setDialogueAndMedia("lose", 120);
+                    }
+                }
+            }
+
+            if (slotState === "BATTLE") {
+                battleTimer--;
+                if (!playerRevealed && battleTimer % 3 === 0) battleRollDisplayP = Math.floor(Math.random() * 85) + 15;
+                if (!enemyRevealed && battleTimer % 3 === 0) battleRollDisplayE = Math.floor(Math.random() * 80) + 15;
+
+                if (battleTimer % 15 === 0 && battleTimer > 40) playSfx(800, 0.06, 'sawtooth');
+
+                if (battleTimer === 100) {
+                    playerRevealed = true; battleRollDisplayP = playerRoll;
+                    dialogueSpeaker = currentTheme.speakers.hero;
+                    dialogueText = "金剛飛拳！火力：" + playerRoll;
+                    playSfx(400, 0.3, 'sawtooth');
+                }
+                if (battleTimer === 50) {
+                    enemyRevealed = true; battleRollDisplayE = enemyRoll;
+                    dialogueSpeaker = currentTheme.speakers.villain;
+                    dialogueText = "機械獸防禦：" + enemyRoll;
+                }
+
+                if (battleTimer <= 0 && mediaHoldTimer <= 0) {
+                    battleWon = playerRoll >= enemyRoll;
+                    slotState = "BATTLE_RESULT";
+                    battleResultTimer = 120;
+                    dialogueSpeaker = currentTheme.speakers.system;
+                    
+                    if (battleWon) setDialogueAndMedia("win", 120);
+                    else setDialogueAndMedia("lose", 120);
+
+                    playSfx(battleWon ? currentTheme.sfxFreq.win : currentTheme.sfxFreq.lose, 0.4, battleWon ? 'square' : 'sawtooth');
+                }
+            }
+
+            if (slotState === "BATTLE_RESULT") {
+                battleResultTimer--;
+                if (battleResultTimer <= 0 && mediaHoldTimer <= 0) {
+                    if (battleWon) {
+                        slotState = "FEVER";
+                        slotNumbers = [7, 7, 7];
+                        jackpots++; updateUI();
+                        dialogueSpeaker = currentTheme.speakers.hero;
+                        setDialogueAndMedia("feverStart", 180);
+                        if (!jackpotPlaying) startJackpotLoop(true);
+                    } else {
+                        slotState = "IDLE";
+                        dialogueSpeaker = currentTheme.speakers.hero;
+                        setDialogueAndMedia("lose", 120);
+                        playSfx(200, 0.3, 'sawtooth');
+                    }
+                }
+            }
+
+            if (slotState === "FEVER") {
+                feverGate.open = true;
+                if (feverGate.wingAngle < 45) feverGate.wingAngle += 3;
+                if (Math.random() < 0.2) playSfx(1200, 0.05);
+
+                if (Math.random() < 0.002 && mediaHoldTimer <= 0) {
+                    slotState = "IDLE";
+                    feverGate.open = false;
+                    dialogueSpeaker = currentTheme.speakers.system;
+                    setDialogueAndMedia("feverEnd", 120);
+                    if (jackpotAutoTriggered) stopJackpotLoop();
+                }
+            } else {
+                if (feverGate.wingAngle > 0) feverGate.wingAngle -= 3;
+                feverGate.open = false;
+            }
+        }
+
+        function drawLcdScreen() {
+            ctx.save();
+            ctx.fillStyle = "#02040a";
+            ctx.fillRect(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h);
+
+            if (activeMediaType === "video" && activeMediaObject && activeMediaObject.readyState >= 2) {
+                ctx.globalAlpha = 0.65;
+                ctx.drawImage(activeMediaObject, SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h);
+                ctx.globalAlpha = 1.0;
+            } else if (activeMediaType === "image" && activeMediaObject && activeMediaObject.complete && activeMediaObject.naturalWidth !== 0) {
+                ctx.globalAlpha = 0.65;
+                ctx.drawImage(activeMediaObject, SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h);
+                ctx.globalAlpha = 1.0;
+            }
+
+            ctx.strokeStyle = slotState === "FEVER" ? currentTheme.secondaryColor : currentTheme.primaryColor;
+            ctx.lineWidth = 4;
+            ctx.strokeRect(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h);
+
+            if (slotState === "BATTLE" || slotState === "BATTLE_RESULT") {
+                drawBattleCards();
+            } else {
+                ctx.textAlign = "center";
+                ctx.font = "bold 80px sans-serif";
+                ctx.fillStyle = slotState === "FEVER" ? currentTheme.secondaryColor : currentTheme.primaryColor;
+                ctx.shadowColor = "#000"; ctx.shadowBlur = 6;
+                ctx.fillText(`${slotNumbers[0]} ${slotNumbers[1]} ${slotNumbers[2]}`, 300, 260);
+                ctx.shadowBlur = 0;
+            }
+
+            for (let b = 0; b < 4; b++) {
+                ctx.fillStyle = b < retainBalls ? currentTheme.primaryColor : "#222";
+                ctx.beginPath(); ctx.arc(250 + b * 33, 285, 7, 0, Math.PI*2); ctx.fill();
+            }
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.82)";
+            ctx.fillRect(SCREEN.x + 5, 305, SCREEN.w - 10, 115);
+            ctx.strokeStyle = currentTheme.primaryColor;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(SCREEN.x + 5, 305, SCREEN.w - 10, 115);
+
+            ctx.fillStyle = currentTheme.accentColor;
+            ctx.font = "bold 30px sans-serif";
+            ctx.textAlign = "left";
+            ctx.fillText(dialogueSpeaker, SCREEN.x + 15, 345);
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 22px sans-serif";
+            let line1 = dialogueText.slice(0, 13);
+            let line2 = dialogueText.slice(13);
+            ctx.fillText(line1, SCREEN.x + 15, 380);
+            if (line2) ctx.fillText(line2, SCREEN.x + 15, 408);
+
+            ctx.restore();
+        }
+
+        function drawBattleCards(){
+            const inResult = slotState === "BATTLE_RESULT";
+            const cardY = SCREEN.y + 15; const cardH = 130; const cardW = 140;
+            const leftX = SCREEN.x + 15; const rightX = SCREEN.x + SCREEN.w - 15 - cardW;
+
+            function card(x, label, value, revealed, isWinner, isLoser){
+                ctx.save();
+                ctx.fillStyle = "rgba(2, 4, 10, 0.85)";
+                ctx.fillRect(x, cardY, cardW, cardH);
+                let borderColor = currentTheme.primaryColor;
+                if (inResult && isWinner) borderColor = currentTheme.accentColor;
+                else if (inResult && isLoser) borderColor = "#444";
+                ctx.lineWidth = 4; ctx.strokeStyle = borderColor; ctx.strokeRect(x, cardY, cardW, cardH);
+
+                ctx.textAlign = "center"; ctx.fillStyle = currentTheme.accentColor;
+                ctx.font = "bold 20px sans-serif"; ctx.fillText(label, x + cardW/2, cardY + 26);
+
+                ctx.font = "bold 46px monospace"; ctx.fillStyle = revealed ? "#ffffff" : "#8ba3c7";
+                ctx.fillText(String(value), x + cardW/2, cardY + 84);
+
+                if (inResult && isWinner) {
+                    ctx.translate(x + cardW/2, cardY + cardH/2); ctx.rotate(-0.25);
+                    ctx.strokeStyle = currentTheme.accentColor; ctx.lineWidth = 3; ctx.strokeRect(-45, -16, 90, 32);
+                    ctx.fillStyle = currentTheme.accentColor; ctx.font = "bold 22px sans-serif"; ctx.fillText("WIN", 0, 8);
+                }
+                ctx.restore();
+            }
+
+            card(leftX, "鐵金剛", battleRollDisplayP, playerRevealed || inResult, inResult && battleWon, inResult && !battleWon);
+            card(rightX, "機械獸", battleRollDisplayE, enemyRevealed || inResult, inResult && !battleWon, inResult && battleWon);
+
+            ctx.save();
+            ctx.translate(SCREEN.x + SCREEN.w/2, cardY + cardH/2);
+            ctx.textAlign = "center"; ctx.font = "bold 30px sans-serif"; ctx.fillStyle = currentTheme.secondaryColor;
+            ctx.fillText("VS", 0, 10);
+            ctx.restore();
+        }
+
+        function drawRingGuide(){
+            ctx.save();
+            ctx.strokeStyle = slotState === "FEVER" ? currentTheme.secondaryColor : currentTheme.primaryColor;
+            ctx.lineWidth = 2; ctx.beginPath();
+            ctx.ellipse(RING.cx, RING.cy, RING.rx + 12, RING.ry + 12, 0, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+        }
+
+        function gameLoop(ts) {
+            processAutoShoot();
+            updateScreenLogic();
+            updateChaseLights(ts || 0);
+            updateChordUI();
+            ctx.clearRect(0, 0, V_WIDTH, V_HEIGHT);
+            drawBgLayer();
+
+            // 外邊框
+            ctx.fillStyle = "#112244"; ctx.fillRect(0, 0, 15, 800); ctx.fillRect(585, 0, 15, 800);
+
+            ctx.strokeStyle = (slotState === "FEVER" && Math.floor(Date.now()/100)%2===0) ? currentTheme.accentColor : currentTheme.secondaryColor;
+            ctx.lineWidth = 4; ctx.beginPath();
+            ctx.moveTo(25, 800); ctx.lineTo(25, 130);
+            ctx.arcTo(25, 20, 300, 20, 110); ctx.arcTo(575, 20, 575, 130, 110);
+            ctx.lineTo(575, 800); ctx.stroke();
+
+            drawRingGuide();
+            drawLcdScreen();
+
+            // 始動口
+            ctx.fillStyle = currentTheme.secondaryColor; ctx.beginPath(); ctx.arc(chanceGate.x, chanceGate.y, chanceGate.r, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#fff"; ctx.font = "bold 11px Arial"; ctx.textAlign = "center"; ctx.fillText("CHANCE", chanceGate.x, chanceGate.y+4);
+
+            // 入賞翼板
+            ctx.save();
+            ctx.translate(300, feverGate.y + 12); ctx.strokeStyle = currentTheme.secondaryColor; ctx.lineWidth = 7;
+            ctx.beginPath(); ctx.moveTo(-feverGate.w/2, 0);
+            let leftRad = (180 - feverGate.wingAngle) * Math.PI / 180;
+            ctx.lineTo(-feverGate.w/2 + Math.cos(leftRad) * 45, Math.sin(leftRad) * 45); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(feverGate.w/2, 0);
+            let rightRad = feverGate.wingAngle * Math.PI / 180;
+            ctx.lineTo(feverGate.w/2 + Math.cos(rightRad) * 45, -Math.sin(rightRad) * 45); ctx.stroke();
+            ctx.restore();
+
+            // 大賞 V-GATE
+            ctx.fillStyle = feverGate.open ? currentTheme.secondaryColor : "#111";
+            ctx.fillRect(feverGate.x - feverGate.w/2, feverGate.y, feverGate.w, feverGate.h);
+            ctx.strokeStyle = currentTheme.primaryColor; ctx.strokeRect(feverGate.x - feverGate.w/2, feverGate.y, feverGate.w, feverGate.h);
+            ctx.fillStyle = "#fff"; ctx.font = "bold 18px Arial";
+            ctx.fillText(feverGate.open ? "◀◀ 光子力 V-GATE OPEN ▶▶" : "【 V-GATE 大賞口 】", feverGate.x, feverGate.y+19);
+
+            // 釘子
+            pins.forEach(p => {
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+                ctx.fillStyle = p.type === 'bumper' ? '#ff2200' : '#4a6fa5'; ctx.fill();
+                if (p.type === 'bumper') {
+                    ctx.save(); ctx.shadowBlur = 8; ctx.shadowColor = '#ff2200';
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
+            });
+
+            // 鋼珠物理與碰撞
+            for (let i = balls.length - 1; i >= 0; i--) {
+                let b = balls[i];
+                b.vy += b.gravity; b.x += b.vx; b.y += b.vy;
+
+                if (b.x < 25 + b.r) { b.x = 25 + b.r; b.vx *= -b.bounce; }
+                if (b.x > 575 - b.r && b.y < 220) { b.x = 575 - b.r; b.vx *= -b.bounce; }
+                if (b.x > 545 - b.r && b.y >= 220) { if(b.vx > 0) { b.x = 545 - b.r; b.vx *= -b.bounce; } }
+                if (b.y < 25 + b.r) { b.y = 25 + b.r; b.vy *= -b.bounce; }
+
+                pins.forEach(p => {
+                    let dx = b.x - p.x; let dy = b.y - p.y; let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < b.r + p.r) {
+                        let angle = Math.atan2(dy, dx);
+                        b.x = p.x + Math.cos(angle) * (b.r + p.r); b.y = p.y + Math.sin(angle) * (b.r + p.r);
+                        let spd = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
+                        let f = p.type === 'bumper' ? 1.35 : 0.58;
+                        b.vx = Math.cos(angle) * Math.max(2, spd) * f; b.vy = Math.sin(angle) * Math.max(2, spd) * f;
+                        if(Math.random() < 0.15) playPinHitSfx(1800, 0.02);
+                    }
+                });
+
+                let cDx = b.x - chanceGate.x; let cDy = b.y - chanceGate.y;
+                if (Math.sqrt(cDx*cDx + cDy*cDy) < b.r + chanceGate.r) {
+                    balls.splice(i, 1);
+                    if (retainBalls < 4) retainBalls++;
+                    myBalls += 4; updateUI(); playSfx(currentTheme.sfxFreq.chance, 0.1); continue;
+                }
+
+                if (feverGate.open && b.x > feverGate.x - feverGate.w/2 && b.x < feverGate.x + feverGate.w/2 && b.y > feverGate.y - 10 && b.y < feverGate.y + feverGate.h) {
+                    balls.splice(i, 1);
+                    myBalls += 15; updateUI(); continue;
+                }
+
+                if (b.y > 810) { balls.splice(i, 1); continue; }
+
+                ctx.save();
+                ctx.fillStyle = '#fff'; ctx.shadowBlur = 4; ctx.shadowColor = currentTheme.primaryColor;
+                ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ===================== Modal 與匯入匯出控制 =====================
+        const mediaKeys = ['start', 'spin', 'battleAlert', 'win', 'lose', 'feverStart', 'feverEnd'];
+
+        openSettingsBtn.addEventListener('click', () => {
+            themeTitleDisplay.textContent = `⚙️ 系統與主題設定：${currentTheme.name}`;
+            bgUrlInput.value = currentTheme.bgImageUrl || '';
+            if (!currentTheme.medias) currentTheme.medias = {};
+            mediaKeys.forEach(k => {
+                const el = document.getElementById(`v_${k}`);
+                if (el) el.value = currentTheme.medias[k] || '';
+            });
+            settingsModal.classList.add('active');
+        });
+
+        closeSettingsBtn.addEventListener('click', () => {
+            currentTheme.bgImageUrl = bgUrlInput.value.trim();
+            if (currentTheme.bgImageUrl) {
+                tryLoadBgImage(currentTheme.bgImageUrl, '網址背景已設定');
+            }
+            if (!currentTheme.medias) currentTheme.medias = {};
+            mediaKeys.forEach(k => {
+                const el = document.getElementById(`v_${k}`);
+                if (el) currentTheme.medias[k] = el.value.trim();
+            });
+            setDialogueAndMedia(currentDialogueKey, 120);
+            settingsModal.classList.remove('active');
+        });
+
+        exportThemeBtn.addEventListener('click', () => {
+            currentTheme.bgImageUrl = bgUrlInput.value.trim();
+            if (!currentTheme.medias) currentTheme.medias = {};
+            mediaKeys.forEach(k => {
+                const el = document.getElementById(`v_${k}`);
+                if (el) currentTheme.medias[k] = el.value.trim();
+            });
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentTheme, null, 2));
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", `${currentTheme.id}-theme.json`);
+            document.body.appendChild(dlAnchorElem);
+            dlAnchorElem.click();
+            dlAnchorElem.remove();
+        });
+
+        importThemeInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const importedConfig = JSON.parse(event.target.result);
+                    if (importedConfig && importedConfig.name && importedConfig.speakers) {
+                        currentTheme = { ...currentTheme, ...importedConfig };
+                        if (!currentTheme.medias && importedConfig.videos) {
+                            currentTheme.medias = importedConfig.videos;
+                        }
+                        document.title = `${currentTheme.name} - 環狀彈珠道`;
+                        dialogueSpeaker = currentTheme.speakers.system;
+                        themeTitleDisplay.textContent = `⚙️ 系統設定：${currentTheme.name}`;
+                        
+                        bgUrlInput.value = currentTheme.bgImageUrl || '';
+                        if (currentTheme.bgImageUrl) {
+                            tryLoadBgImage(currentTheme.bgImageUrl, '網址背景已設定');
+                        } else {
+                            tryLoadBgImage('', '');
+                        }
+
+                        mediaKeys.forEach(k => {
+                            const el = document.getElementById(`v_${k}`);
+                            if (el && currentTheme.medias) el.value = currentTheme.medias[k] || '';
+                        });
+                        setDialogueAndMedia("start", 120);
+                        alert(`成功導入主題：「${currentTheme.name}」！`);
+                        settingsModal.classList.remove('active');
+                    } else {
+                        alert("匯入失敗：JSON 格式不相容！");
+                    }
+                } catch (err) {
+                    alert("匯入失敗：無法解析 JSON 檔案！");
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        initPins();
+        updateUI();
+        setDialogueAndMedia("start", 120);
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
